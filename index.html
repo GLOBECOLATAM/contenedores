@@ -48,6 +48,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--navy);color:var(-
 .attrib{position:absolute;right:10px;bottom:10px;font-size:9px;color:rgba(143,166,184,.6);background:rgba(7,26,43,.5);padding:3px 7px;border-radius:6px}
 .mapreset{position:absolute;right:14px;top:14px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.08em;color:var(--ink);background:rgba(7,26,43,.7);border:1px solid var(--glass-brd);padding:8px 12px;border-radius:10px;cursor:pointer;backdrop-filter:blur(8px);transition:.18s}
 .mapreset:hover{border-color:var(--steel)}
+.cdetail{position:absolute;left:14px;top:14px;z-index:5;width:min(300px,72vw);background:rgba(7,26,43,.86);border:1px solid var(--glass-brd);border-radius:16px;padding:18px;backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);box-shadow:0 20px 50px -20px rgba(0,0,0,.7);opacity:0;transform:translateY(-8px) scale(.98);pointer-events:none;transition:.25s cubic-bezier(.2,.7,.2,1)}
+.cdetail.show{opacity:1;transform:none;pointer-events:auto}
+.cdetail .x{position:absolute;right:12px;top:10px;cursor:pointer;color:var(--steel);font-size:20px;line-height:1;background:none;border:none}
+.cdetail .x:hover{color:var(--ink)}
+.cdetail .cid{font-family:'Bebas Neue',sans-serif;font-size:40px;line-height:.85}
+.cdetail .crt{display:inline-block;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.08em;padding:4px 10px;border-radius:8px;margin:8px 0 12px}
+.cdetail .cmeta{font-family:'Space Mono',monospace;font-size:11px;color:var(--steel);line-height:1.8}
+.cdetail .cmeta b{color:var(--ink)}
+.cdetail .cacts{display:flex;gap:8px;margin-top:14px}
+.cdetail .cacts a{flex:1;text-align:center;text-decoration:none;font-size:12px;font-weight:600;padding:9px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:6px}
+.cdetail .cacts .go{background:var(--blue);color:#fff}
+.cdetail .cacts .wa{background:rgba(37,211,102,.16);color:#25D366;border:1px solid rgba(37,211,102,.3)}
 
 .app{position:relative;z-index:3;background:var(--navy);padding:34px 0 90px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:30px 0 34px}
@@ -133,7 +145,8 @@ footer{position:relative;z-index:3;background:var(--navy);border-top:1px solid v
   </div>
   <div class="mapstage">
     <canvas id="map2d"></canvas>
-    <div class="maphint">Arrastra para mover · rueda o pellizca para acercar</div>
+    <div class="cdetail" id="cdetail"></div>
+    <div class="maphint">Arrastra para mover · ⌘/Ctrl + scroll para acercar · toca un punto</div>
     <button class="mapreset" id="mapreset">Ver toda la red</button>
     <div class="attrib">© OpenStreetMap</div>
   </div>
@@ -306,6 +319,7 @@ window.mapFlyToNum=mapFlyToNum;
 const mc=document.getElementById('map2d'),mx=mc.getContext('2d');
 let MW=0,MH=0;
 let view={lat:-1.25,lng:-78.62,zoom:12};
+let detailNum=null;
 let target=null;
 const tileCache=new Map();
 const TILE=256;
@@ -319,53 +333,75 @@ function loadTile(z,x,y){const key=`${z}/${x}/${y}`;if(tileCache.has(key))return
   tileCache.set(key,img);return img;}
 function drawMap(){
   if(!MW)return;
-  mx.clearRect(0,0,MW,MH);mx.fillStyle="#0a1826";mx.fillRect(0,0,MW,MH);
+  mx.clearRect(0,0,MW,MH);mx.fillStyle="#071A2B";mx.fillRect(0,0,MW,MH);
   const z=Math.floor(view.zoom),scale=Math.pow(2,view.zoom-z);
   const cx=lon2x(view.lng,z),cy=lat2y(view.lat,z),nT=Math.pow(2,z);
   const cols=Math.ceil(MW/(TILE*scale))+2,rows=Math.ceil(MH/(TILE*scale))+2;
   const sX=Math.floor(cx-cols/2),sY=Math.floor(cy-rows/2);
-  // tiles con filtro oscuro (OSM es claro -> lo invertimos/atenuamos para tema navy)
+  // tiles minimalistas: invertidos a oscuro y muy atenuados -> se integran al navy y solo se
+  // insinúan calles y nombres. El modo "screen" deja pasar el fondo navy.
   mx.save();
-  mx.filter='invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)';
+  mx.globalAlpha=0.5;
+  mx.globalCompositeOperation='lighten';
+  mx.filter='invert(1) grayscale(1) brightness(.55) contrast(1.15)';
   for(let ix=sX;ix<sX+cols;ix++)for(let iy=sY;iy<sY+rows;iy++){
     const tx=((ix%nT)+nT)%nT;if(iy<0||iy>=nT)continue;
     const img=loadTile(z,tx,iy);
     const px=(ix-cx)*TILE*scale+MW/2,py=(iy-cy)*TILE*scale+MH/2;
     if(img&&img.complete&&img.naturalWidth)mx.drawImage(img,px,py,TILE*scale+1,TILE*scale+1);}
   mx.restore();
-  // tinte navy encima para integrar con la marca
-  mx.fillStyle="rgba(7,26,43,.45)";mx.fillRect(0,0,MW,MH);
+  // veladura navy para unificar y bajar aún más el ruido visual
+  mx.fillStyle="rgba(7,26,43,.35)";mx.fillRect(0,0,MW,MH);
   drawZones(z,scale,cx,cy);
   drawPoints(z,scale,cx,cy);
 }
 function project(lat,lng,z,scale,cx,cy){return [(lon2x(lng,z)-cx)*TILE*scale+MW/2,(lat2y(lat,z)-cy)*TILE*scale+MH/2];}
 
-/* convex hull (Andrew monotone chain) */
-function hull(pts){
-  if(pts.length<3)return pts;
+/* convex hull (Andrew monotone chain) — usado como base */
+function convexHull(pts){
+  if(pts.length<3)return pts.slice();
   const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
   const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
   const lo=[];for(const pt of p){while(lo.length>=2&&cross(lo[lo.length-2],lo[lo.length-1],pt)<=0)lo.pop();lo.push(pt);}
   const up=[];for(let i=p.length-1;i>=0;i--){const pt=p[i];while(up.length>=2&&cross(up[up.length-2],up[up.length-1],pt)<=0)up.pop();up.push(pt);}
   lo.pop();up.pop();return lo.concat(up);
 }
-/* expandir el polígono desde su centroide */
-function expandHull(h,f){
-  const cx=h.reduce((s,p)=>s+p[0],0)/h.length, cy=h.reduce((s,p)=>s+p[1],0)/h.length;
-  return h.map(([x,y])=>[cx+(x-cx)*f, cy+(y-cy)*f]);
-}
-/* curva suave cerrada (Catmull-Rom) para que el perímetro no tenga esquinas duras */
-function smoothClosedPath(ctx,pts){
-  if(pts.length<3)return;
-  ctx.beginPath();
-  const n=pts.length;
-  ctx.moveTo((pts[0][0]+pts[n-1][0])/2,(pts[0][1]+pts[n-1][1])/2);
-  for(let i=0;i<n;i++){
-    const p1=pts[i], p2=pts[(i+1)%n];
-    const mx2=(p1[0]+p2[0])/2, my2=(p1[1]+p2[1])/2;
-    ctx.quadraticCurveTo(p1[0],p1[1],mx2,my2);
+/* concave hull: parte del convex hull y "hunde" cada arista hacia el punto interior
+   más cercano cuando la arista es larga, hasta ceñir el contorno irregular real. */
+function concaveHull(points,maxEdge){
+  const pts=points.filter((p,i,a)=>a.findIndex(q=>q[0]===p[0]&&q[1]===p[1])===i);
+  if(pts.length<4)return convexHull(pts);
+  let hullPts=convexHull(pts);
+  const inHull=new Set(hullPts.map(p=>p[0]+','+p[1]));
+  const dist2=(a,b)=>{const dx=a[0]-b[0],dy=a[1]-b[1];return dx*dx+dy*dy;};
+  const distToSeg=(p,a,b)=>{
+    const dx=b[0]-a[0],dy=b[1]-a[1];const l2=dx*dx+dy*dy||1;
+    let t=((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2;t=Math.max(0,Math.min(1,t));
+    const px=a[0]+t*dx,py=a[1]+t*dy;return Math.hypot(p[0]-px,p[1]-py);
+  };
+  let changed=true, guard=0;
+  const maxE2=maxEdge*maxEdge;
+  while(changed && guard++<pts.length*2){
+    changed=false;
+    for(let i=0;i<hullPts.length;i++){
+      const a=hullPts[i], b=hullPts[(i+1)%hullPts.length];
+      if(dist2(a,b)<=maxE2)continue;
+      // buscar punto interior más cercano a esta arista que no esté ya en el hull
+      let best=null,bestD=Infinity;
+      for(const c of pts){
+        const kk=c[0]+','+c[1];if(inHull.has(kk))continue;
+        const d=distToSeg(c,a,b);
+        // debe estar razonablemente cerca de la arista y "dentro" del span
+        if(d<bestD && d<maxEdge){bestD=d;best=c;}
+      }
+      if(best){
+        hullPts.splice((i+1)%hullPts.length===0?hullPts.length:i+1,0,best);
+        inHull.add(best[0]+','+best[1]);
+        changed=true;break;
+      }
+    }
   }
-  ctx.closePath();
+  return hullPts;
 }
 let zoneAnim=0; // 0..1 crecimiento de la zona
 function drawZones(z,scale,cx,cy){
@@ -373,28 +409,40 @@ function drawZones(z,scale,cx,cy){
   const list=DATA.filter(d=>d.ruta===activeRoute);
   if(list.length<3)return;
   const scr=list.map(d=>project(d.lat,d.lng,z,scale,cx,cy));
-  let h=hull(scr);
+  // arista máxima adaptada al zoom: permite seguir concavidades sin fragmentar
+  const maxEdge=Math.max(60,120*scale);
+  let h=concaveHull(scr,maxEdge);
   if(h.length<3)return;
-  const grow=1.06+0.10*zoneAnim;
-  h=expandHull(h,grow);
   const col=routeHex(activeRoute);
+  const rgb=hexToRgb(col);
   const cxp=h.reduce((s,p)=>s+p[0],0)/h.length, cyp=h.reduce((s,p)=>s+p[1],0)/h.length;
   let maxR=0;for(const p of h){const d=Math.hypot(p[0]-cxp,p[1]-cyp);if(d>maxR)maxR=d;}
 
   mx.save();
-  smoothClosedPath(mx,h);
-  // relleno gradiente radial suave
+  // camino poligonal siguiendo el borde real, con muy leve suavizado en vértices
+  softPolyPath(mx,h,0.18);
   const g=mx.createRadialGradient(cxp,cyp,maxR*0.1,cxp,cyp,maxR);
-  const rgb=hexToRgb(col);
-  g.addColorStop(0,`rgba(${rgb},${0.30*zoneAnim})`);
-  g.addColorStop(0.6,`rgba(${rgb},${0.16*zoneAnim})`);
+  g.addColorStop(0,`rgba(${rgb},${0.26*zoneAnim})`);
+  g.addColorStop(0.65,`rgba(${rgb},${0.13*zoneAnim})`);
   g.addColorStop(1,`rgba(${rgb},0)`);
   mx.fillStyle=g;mx.fill();
-  // halo/borde difuminado (sin línea dura)
-  mx.shadowColor=col;mx.shadowBlur=28*zoneAnim;
-  mx.strokeStyle=`rgba(${rgb},${0.42*zoneAnim})`;mx.lineWidth=2.5;
+  mx.shadowColor=col;mx.shadowBlur=22*zoneAnim;
+  mx.strokeStyle=`rgba(${rgb},${0.5*zoneAnim})`;mx.lineWidth=2;
   mx.stroke();
   mx.restore();
+}
+/* traza el polígono con esquinas apenas redondeadas (t pequeño = fiel al borde) */
+function softPolyPath(ctx,pts,t){
+  const n=pts.length;if(n<3)return;
+  ctx.beginPath();
+  for(let i=0;i<n;i++){
+    const p0=pts[(i-1+n)%n], p1=pts[i], p2=pts[(i+1)%n];
+    const inx=p1[0]+(p0[0]-p1[0])*t, iny=p1[1]+(p0[1]-p1[1])*t;
+    const outx=p1[0]+(p2[0]-p1[0])*t, outy=p1[1]+(p2[1]-p1[1])*t;
+    if(i===0)ctx.moveTo(inx,iny);else ctx.lineTo(inx,iny);
+    ctx.quadraticCurveTo(p1[0],p1[1],outx,outy);
+  }
+  ctx.closePath();
 }
 function hexToRgb(h){const n=parseInt(h.slice(1),16);return `${(n>>16)&255},${(n>>8)&255},${n&255}`;}
 
@@ -402,17 +450,27 @@ let pulse=0;
 function drawPoints(z,scale,cx,cy){
   const list=activeRoute==="ALL"?DATA:DATA.filter(d=>d.ruta===activeRoute);
   const hi=(searchMode&&filtered.length&&filtered.length<=3)?filtered[0]:null;
+  const sel=detailNum?DATA.find(d=>d.num===detailNum):null;
+  const rPt=LOW?3:3.6;
   for(const d of list){
     const [px,py]=project(d.lat,d.lng,z,scale,cx,cy);
     if(px<-20||px>MW+20||py<-20||py>MH+20)continue;
-    mx.beginPath();mx.arc(px,py,LOW?3:3.4,0,7);mx.fillStyle=routeHex(d.ruta);mx.globalAlpha=.9;mx.fill();mx.globalAlpha=1;}
-  if(hi){
-    const [px,py]=project(hi.lat,hi.lng,z,scale,cx,cy);
+    const col=routeHex(d.ruta);
+    // leve glow para que resalten sobre el mapa minimalista
+    mx.beginPath();mx.arc(px,py,rPt+2.5,0,7);mx.fillStyle=col;mx.globalAlpha=.16;mx.fill();
+    mx.beginPath();mx.arc(px,py,rPt,0,7);mx.fillStyle=col;mx.globalAlpha=.95;mx.fill();
+    mx.globalAlpha=1;
+  }
+  const markOne=(d,label)=>{
+    const [px,py]=project(d.lat,d.lng,z,scale,cx,cy);
     const rad=10+Math.sin(pulse)*5;
-    mx.beginPath();mx.arc(px,py,rad,0,7);mx.strokeStyle=routeHex(hi.ruta);mx.lineWidth=2;mx.globalAlpha=.7;mx.stroke();mx.globalAlpha=1;
+    mx.beginPath();mx.arc(px,py,rad,0,7);mx.strokeStyle=routeHex(d.ruta);mx.lineWidth=2;mx.globalAlpha=.7;mx.stroke();mx.globalAlpha=1;
     mx.beginPath();mx.arc(px,py,5,0,7);mx.fillStyle="#fff";mx.fill();
-    mx.beginPath();mx.arc(px,py,3,0,7);mx.fillStyle=routeHex(hi.ruta);mx.fill();
-    mx.font="bold 12px 'Space Mono',monospace";mx.fillStyle="#fff";mx.fillText(hi.num,px+14,py+4);}
+    mx.beginPath();mx.arc(px,py,3,0,7);mx.fillStyle=routeHex(d.ruta);mx.fill();
+    if(label){mx.font="bold 12px 'Space Mono',monospace";mx.fillStyle="#fff";mx.fillText(d.num,px+14,py+4);}
+  };
+  if(sel)markOne(sel,false);
+  if(hi)markOne(hi,true);
 }
 function mapMark(){drawMap();}
 function mapFitAll(){
@@ -426,6 +484,8 @@ function mapFitAll(){
 function mapFlyTo(d){target={lat:d.lat,lng:d.lng,zoom:16};}
 
 let drag=false,lx=0,ly=0;
+let zoomTarget=view.zoom;           // objetivo de zoom para interpolar (fluidez)
+let zoomFocus=null;                 // punto de la pantalla hacia el que se acerca
 mc.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;mc.setPointerCapture(e.pointerId);target=null;});
 mc.addEventListener('pointermove',e=>{if(!drag)return;
   const z=view.zoom,zi=Math.floor(z),nT=Math.pow(2,zi);
@@ -433,17 +493,102 @@ mc.addEventListener('pointermove',e=>{if(!drag)return;
   view.lng-=dx/(TILE*Math.pow(2,z))*360;
   const cy=lat2y(view.lat,zi)-dy/(TILE*Math.pow(2,z-zi));
   const n=Math.PI-2*Math.PI*cy/nT;view.lat=180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));
-  drawMap();});
-addEventListener('pointerup',()=>drag=false);
-mc.addEventListener('wheel',e=>{e.preventDefault();target=null;view.zoom=Math.max(9,Math.min(18,view.zoom-Math.sign(e.deltaY)*0.4));drawMap();},{passive:false});
+  scheduleDraw();});
+let downX=0,downY=0,moved=false;
+mc.addEventListener('pointerdown',e=>{downX=e.clientX;downY=e.clientY;moved=false;});
+mc.addEventListener('pointermove',e=>{if(Math.hypot(e.clientX-downX,e.clientY-downY)>6)moved=true;});
+mc.addEventListener('pointerup',e=>{
+  drag=false;
+  if(moved)return;                       // fue arrastre, no clic
+  const r=mc.getBoundingClientRect();
+  const mxp=e.clientX-r.left, myp=e.clientY-r.top;
+  const z=Math.floor(view.zoom),scale=Math.pow(2,view.zoom-z);
+  const cx=lon2x(view.lng,z),cy=lat2y(view.lat,z);
+  const list=activeRoute==="ALL"?DATA:DATA.filter(d=>d.ruta===activeRoute);
+  let best=null,bestD=16*16; // radio de clic ~16px
+  for(const d of list){
+    const [px,py]=project(d.lat,d.lng,z,scale,cx,cy);
+    const dd=(px-mxp)**2+(py-myp)**2;
+    if(dd<bestD){bestD=dd;best=d;}
+  }
+  if(best)showDetail(best);else hideDetail();
+});
+function showDetail(d){
+  const el=document.getElementById('cdetail');
+  const c=routeHex(d.ruta);
+  const map=d.link||`https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}`;
+  el.innerHTML=`<button class="x" onclick="hideDetail()">×</button>
+    <div class="cid">${d.num}</div>
+    <div class="crt" style="background:${c}28;color:${c}">${d.ruta||'SIN RUTA'}</div>
+    <div class="cmeta">LAT <b>${d.lat.toFixed(6)}</b><br>LNG <b>${d.lng.toFixed(6)}</b>${d.gidsa&&d.gidsa!=='N/A'?`<br>GIDSA <b>${d.gidsa}</b>`:''}<br>QR <b>${d.qr?'Requiere':'No'}</b></div>
+    <div class="cacts">
+      <a class="go" href="${map}" target="_blank" rel="noopener">Ir a ubicación</a>
+      ${d.wa?`<a class="wa" href="${d.wa}" target="_blank" rel="noopener">WhatsApp</a>`:``}
+    </div>`;
+  el.classList.add('show');
+  detailNum=d.num;
+  scheduleDraw();
+}
+function hideDetail(){document.getElementById('cdetail').classList.remove('show');detailNum=null;scheduleDraw();}
+window.hideDetail=hideDetail;
+addEventListener('pointerup',()=>{drag=false;});
+
+/* rueda/pinch-trackpad: SOLO hace zoom con ⌘/Ctrl (o gesto pinch, que en Mac llega con ctrlKey).
+   Sin esa tecla, no prevenimos el evento => la página baja normal (el mapa "pasa de largo"). */
+mc.addEventListener('wheel',e=>{
+  const isZoomGesture = e.ctrlKey || e.metaKey;   // pinch trackpad => ctrlKey=true
+  if(!isZoomGesture) return;                       // scroll normal: dejar pasar
+  e.preventDefault();
+  const r=mc.getBoundingClientRect();
+  zoomFocus={x:e.clientX-r.left, y:e.clientY-r.top};
+  // paso pequeño y proporcional => zoom lento y fluido
+  const step = -e.deltaY * 0.0022;
+  zoomTarget = Math.max(9, Math.min(18, zoomTarget + step));
+  zoomAnimating=true;
+},{passive:false});
+
+/* pinch táctil (móvil): factor lento */
 let pd=0;
 mc.addEventListener('touchstart',e=>{if(e.touches.length===2)pd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});
-mc.addEventListener('touchmove',e=>{if(e.touches.length===2){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);view.zoom=Math.max(9,Math.min(18,view.zoom+(d-pd)*0.01));pd=d;target=null;drawMap();}},{passive:true});
+mc.addEventListener('touchmove',e=>{if(e.touches.length===2){
+  const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  const r=mc.getBoundingClientRect();
+  zoomFocus={x:(e.touches[0].clientX+e.touches[1].clientX)/2-r.left,y:(e.touches[0].clientY+e.touches[1].clientY)/2-r.top};
+  zoomTarget=Math.max(9,Math.min(18,zoomTarget+(d-pd)*0.004)); // más lento que antes
+  pd=d;zoomAnimating=true;
+}},{passive:true});
 
-let zoneAnimating=false;
+let zoneAnimating=false, zoomAnimating=false, drawQueued=false;
+function scheduleDraw(){drawQueued=true;}
 function mapLoop(){
   pulse+=0.12;
-  let needsDraw=false;
+  let needsDraw=drawQueued;drawQueued=false;
+  if(zoomAnimating){
+    // interpolación suave del zoom manteniendo el punto bajo el cursor fijo
+    const z0=view.zoom;
+    const nz=z0+(zoomTarget-z0)*0.18;
+    if(zoomFocus){
+      // lng/lat bajo el foco antes
+      const zi=Math.floor(z0),scale=Math.pow(2,z0-zi);
+      const cx=lon2x(view.lng,zi),cy=lat2y(view.lat,zi);
+      const wx=cx+(zoomFocus.x-MW/2)/(TILE*scale);
+      const wy=cy+(zoomFocus.y-MH/2)/(TILE*scale);
+      const lngF=wx/Math.pow(2,zi)*360-180;
+      const nn=Math.PI-2*Math.PI*wy/Math.pow(2,zi);
+      const latF=180/Math.PI*Math.atan(0.5*(Math.exp(nn)-Math.exp(-nn)));
+      view.zoom=nz;
+      // reposicionar centro para que el foco quede en el mismo pixel
+      const zi2=Math.floor(nz),scale2=Math.pow(2,nz-zi2);
+      const fx=lon2x(lngF,zi2),fy=lat2y(latF,zi2);
+      const ncx=fx-(zoomFocus.x-MW/2)/(TILE*scale2);
+      const ncy=fy-(zoomFocus.y-MH/2)/(TILE*scale2);
+      view.lng=ncx/Math.pow(2,zi2)*360-180;
+      const n2=Math.PI-2*Math.PI*ncy/Math.pow(2,zi2);
+      view.lat=180/Math.PI*Math.atan(0.5*(Math.exp(n2)-Math.exp(-n2)));
+    }else{view.zoom=nz;}
+    if(Math.abs(zoomTarget-view.zoom)<0.005){view.zoom=zoomTarget;zoomAnimating=false;}
+    needsDraw=true;
+  }
   if(zoneAnimating){
     zoneAnim+=(1-zoneAnim)*0.12;
     if(zoneAnim>0.99){zoneAnim=1;zoneAnimating=false;}
@@ -451,7 +596,8 @@ function mapLoop(){
   }
   if(target){
     view.lat+=(target.lat-view.lat)*0.12;view.lng+=(target.lng-view.lng)*0.12;view.zoom+=(target.zoom-view.zoom)*0.12;
-    if(Math.abs(target.lat-view.lat)<1e-5&&Math.abs(target.zoom-view.zoom)<0.01){view.lat=target.lat;view.lng=target.lng;view.zoom=target.zoom;target=null;}
+    zoomTarget=view.zoom;
+    if(Math.abs(target.lat-view.lat)<1e-5&&Math.abs(target.zoom-view.zoom)<0.01){view.lat=target.lat;view.lng=target.lng;view.zoom=target.zoom;zoomTarget=view.zoom;target=null;}
     needsDraw=true;
   }else if(searchMode&&filtered.length&&filtered.length<=3){needsDraw=true;}
   if(needsDraw)drawMap();
