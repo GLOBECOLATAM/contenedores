@@ -35,13 +35,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--navy);color:var(-
 @keyframes sweep{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
 @keyframes rise{to{opacity:1;transform:translateY(0)}}
 
-.mapwrap{position:relative;z-index:3;background:linear-gradient(180deg,transparent,var(--navy) 12%);padding-top:6vh}
 .wrap{width:min(1240px,92vw);margin:0 auto}
-.mapcopy{text-align:center;margin-bottom:26px}
+.mapwrap{position:relative;z-index:3;background:linear-gradient(180deg,transparent,var(--navy) 12%);padding-top:6vh}
+.mapcopy{text-align:center;margin-bottom:26px;padding:0 6vw}
 .mapcopy h2{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,5vw,64px);line-height:1;text-transform:uppercase}
 .mapcopy p{color:var(--steel);font-weight:300;margin-top:8px}
 
-.mapstage{position:relative;border-radius:22px;overflow:hidden;border:1px solid var(--glass-brd);background:#0a1826;aspect-ratio:16/10;max-height:64vh;box-shadow:0 30px 80px -30px rgba(0,0,0,.7)}
+.mapstage{position:relative;overflow:hidden;border-top:1px solid var(--glass-brd);border-bottom:1px solid var(--glass-brd);background:#0a1826;width:100vw;margin-left:calc(50% - 50vw);height:82vh;box-shadow:0 30px 80px -30px rgba(0,0,0,.7);will-change:opacity,transform}
 #map2d{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 #map2d:active{cursor:grabbing}
 .maphint{position:absolute;left:14px;bottom:12px;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;color:var(--steel);background:rgba(7,26,43,.6);padding:6px 10px;border-radius:8px;backdrop-filter:blur(6px);pointer-events:none}
@@ -91,6 +91,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--navy);color:var(-
 .btn.wa:hover{background:rgba(37,211,102,.24)}
 
 .empty{text-align:center;padding:70px 20px;color:var(--steel);grid-column:1/-1}
+.sec-label{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);padding:8px 2px 2px;margin-top:6px;border-bottom:1px solid var(--glass-brd)}
+.sec-label.rel{color:var(--steel);margin-top:18px}
 .empty .big{font-family:'Bebas Neue',sans-serif;font-size:42px;color:var(--ink);margin-bottom:8px}
 .loader{text-align:center;padding:90px 20px;color:var(--steel);font-family:'Space Mono',monospace;letter-spacing:.1em}
 .loader .dot{display:inline-block;animation:blink 1.4s infinite}
@@ -101,7 +103,7 @@ footer{position:relative;z-index:3;background:var(--navy);border-top:1px solid v
 
 @media(max-width:820px){
   .controls{position:relative;top:0}
-  .mapstage{aspect-ratio:4/3;max-height:56vh}
+  .mapstage{height:70vh}
   .count{margin-left:0}
 }
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;scroll-behavior:auto}}
@@ -128,12 +130,12 @@ footer{position:relative;z-index:3;background:var(--navy);border-top:1px solid v
       <h2>La red sobre Ambato</h2>
       <p>Cada punto es un contenedor. El color indica su ruta.</p>
     </div>
-    <div class="mapstage">
-      <canvas id="map2d"></canvas>
-      <div class="maphint">Arrastra para mover · rueda o pellizca para acercar</div>
-      <button class="mapreset" id="mapreset">Ver toda la red</button>
-      <div class="attrib">© OpenStreetMap · CARTO</div>
-    </div>
+  </div>
+  <div class="mapstage">
+    <canvas id="map2d"></canvas>
+    <div class="maphint">Arrastra para mover · rueda o pellizca para acercar</div>
+    <button class="mapreset" id="mapreset">Ver toda la red</button>
+    <div class="attrib">© OpenStreetMap</div>
   </div>
 </section>
 
@@ -224,36 +226,79 @@ function buildStats(routes){
 }
 function animN(el,to){if(!el)return;let n=0;const step=Math.max(1,Math.ceil(to/26));const t=setInterval(()=>{n+=step;if(n>=to){n=to;clearInterval(t);}el.textContent=n;},22);}
 
+/* orden ascendente inteligente para ids mixtos (1302 antes que G1) */
+function numSort(a,b){
+  const na=parseFloat(a.num), nb=parseFloat(b.num);
+  const aNum=!isNaN(na), bNum=!isNaN(nb);
+  if(aNum&&bNum)return na-nb;
+  if(aNum)return -1;
+  if(bNum)return 1;
+  return a.num.localeCompare(b.num);
+}
+let searchMode=false, exactList=[], relatedList=[];
 function apply(){
-  filtered=DATA.filter(d=>{
-    const okR=activeRoute==="ALL"||d.ruta===activeRoute;
-    const okQ=!query||d.num.toLowerCase().includes(query)||d.gidsa.toLowerCase().includes(query);
-    return okR&&okQ;});
+  const qn=query;
+  searchMode = qn.length>=3;
+  if(searchMode){
+    const inRoute=d=>activeRoute==="ALL"||d.ruta===activeRoute;
+    exactList = DATA.filter(d=>inRoute(d)&&d.num.toLowerCase()===qn);
+    relatedList = DATA.filter(d=>inRoute(d)&&d.num.toLowerCase()!==qn&&(d.num.toLowerCase().startsWith(qn)||d.gidsa.toLowerCase()===qn)).sort(numSort);
+    filtered=[...exactList,...relatedList];
+  }else{
+    // sin búsqueda válida: solo filtro por ruta (no filtra por texto corto)
+    filtered=DATA.filter(d=>activeRoute==="ALL"||d.ruta===activeRoute);
+    exactList=[];relatedList=[];
+  }
   render();mapMark();
-  if(query&&filtered.length&&filtered.length<=3)mapFlyTo(filtered[0]);
+  if(searchMode && filtered.length && filtered.length<=3) mapFlyTo(filtered[0]);
+}
+
+function cardHTML(d,i){
+  const map=d.link||`https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}`;
+  const c=routeHex(d.ruta);
+  return `<div class="card" style="--_c:${c};--_cb:${c}28;animation-delay:${Math.min(i*22,400)}ms">
+    <div class="top"><div class="id">${d.num}</div><div class="rt">${d.ruta||'SIN RUTA'}</div></div>
+    <div class="meta">LAT <b>${d.lat.toFixed(6)}</b><br>LNG <b>${d.lng.toFixed(6)}</b>${d.gidsa&&d.gidsa!=='N/A'?`<br>GIDSA <b>${d.gidsa}</b>`:''}<br><span class="qr ${d.qr?'yes':'no'}">${d.qr?'REQUIERE QR':'SIN QR'}</span></div>
+    <div class="acts">
+      <button class="btn loc" onclick="mapFlyToNum('${d.num.replace(/'/g,"")}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Mapa</button>
+      <a class="btn map" href="${map}" target="_blank" rel="noopener"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Ir</a>
+      ${d.wa?`<a class="btn wa" href="${d.wa}" target="_blank" rel="noopener"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.4A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.9.8.8-2.8-.2-.3A8 8 0 1 1 12 20zm4.4-6c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.3.2-.5.1a6.5 6.5 0 0 1-3.2-2.8c-.1-.2 0-.4.1-.5l.4-.5.2-.4c0-.1 0-.3-.1-.4l-.7-1.7c-.2-.5-.4-.4-.5-.4h-.5c-.2 0-.4.1-.6.3a3 3 0 0 0-1 2.3 5.3 5.3 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4c2.1.8 2.1.6 2.5.5a2.7 2.7 0 0 0 1.8-1.3c.2-.4.2-.7.1-.8z"/></svg></a>`:``}
+    </div>
+  </div>`;
 }
 
 function render(){
   const g=document.getElementById('grid');
-  document.getElementById('count').textContent=`${filtered.length} de ${DATA.length}`;
-  if(!filtered.length){g.innerHTML=`<div class="empty"><div class="big">Sin resultados</div>Prueba con otro número o cambia de ruta.</div>`;return;}
-  g.innerHTML=filtered.slice(0,120).map((d,i)=>{
-    const map=d.link||`https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}`;
-    const c=routeHex(d.ruta);
-    return `<div class="card" style="--_c:${c};--_cb:${c}28;animation-delay:${Math.min(i*22,400)}ms">
-      <div class="top"><div class="id">${d.num}</div><div class="rt">${d.ruta||'SIN RUTA'}</div></div>
-      <div class="meta">LAT <b>${d.lat.toFixed(6)}</b><br>LNG <b>${d.lng.toFixed(6)}</b>${d.gidsa&&d.gidsa!=='N/A'?`<br>GIDSA <b>${d.gidsa}</b>`:''}<br><span class="qr ${d.qr?'yes':'no'}">${d.qr?'REQUIERE QR':'SIN QR'}</span></div>
-      <div class="acts">
-        <button class="btn loc" onclick="mapFlyToNum('${d.num.replace(/'/g,"")}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Mapa</button>
-        <a class="btn map" href="${map}" target="_blank" rel="noopener"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Ir</a>
-        ${d.wa?`<a class="btn wa" href="${d.wa}" target="_blank" rel="noopener"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.4A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.9.8.8-2.8-.2-.3A8 8 0 1 1 12 20zm4.4-6c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.3.2-.5.1a6.5 6.5 0 0 1-3.2-2.8c-.1-.2 0-.4.1-.5l.4-.5.2-.4c0-.1 0-.3-.1-.4l-.7-1.7c-.2-.5-.4-.4-.5-.4h-.5c-.2 0-.4.1-.6.3a3 3 0 0 0-1 2.3 5.3 5.3 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4c2.1.8 2.1.6 2.5.5a2.7 2.7 0 0 0 1.8-1.3c.2-.4.2-.7.1-.8z"/></svg></a>`:``}
-      </div>
-    </div>`;}).join('');
+  const cnt=document.getElementById('count');
+  if(query && query.length>0 && query.length<3){
+    cnt.textContent=`Escribe al menos 3 dígitos`;
+    g.innerHTML=`<div class="empty"><div class="big">Sigue escribiendo…</div>La búsqueda se activa a partir de 3 dígitos.</div>`;
+    return;
+  }
+  if(searchMode){
+    cnt.textContent=`${filtered.length} coincidencia${filtered.length===1?'':'s'}`;
+    if(!filtered.length){g.innerHTML=`<div class="empty"><div class="big">Sin resultados</div>No hay contenedores con «${query}».</div>`;return;}
+    let html='';
+    if(exactList.length){
+      html+=`<div class="sec-label" style="grid-column:1/-1">Resultado exacto</div>`;
+      html+=exactList.map((d,i)=>cardHTML(d,i)).join('');
+    }
+    if(relatedList.length){
+      html+=`<div class="sec-label rel" style="grid-column:1/-1">Búsquedas relacionadas · ${relatedList.length}</div>`;
+      html+=relatedList.slice(0,120).map((d,i)=>cardHTML(d,i+exactList.length)).join('');
+    }
+    g.innerHTML=html;
+    return;
+  }
+  // modo normal (por ruta)
+  cnt.textContent=`${filtered.length} de ${DATA.length}`;
+  if(!filtered.length){g.innerHTML=`<div class="empty"><div class="big">Sin resultados</div>Prueba con otra ruta.</div>`;return;}
+  g.innerHTML=filtered.slice(0,120).map((d,i)=>cardHTML(d,i)).join('');
 }
 
 document.getElementById('q').addEventListener('input',e=>{query=e.target.value.trim().toLowerCase();apply();});
-document.getElementById('routes').addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b)return;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));b.classList.add('on');activeRoute=b.dataset.r;apply();});
-document.getElementById('mapreset').addEventListener('click',()=>{document.getElementById('q').value='';query='';apply();mapFitAll();});
+document.getElementById('routes').addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b)return;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));b.classList.add('on');activeRoute=b.dataset.r;zoneAnim=0;zoneAnimating=true;apply();});
+document.getElementById('mapreset').addEventListener('click',()=>{document.getElementById('q').value='';query='';activeRoute='ALL';document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));document.querySelector('.chip[data-r="ALL"]').classList.add('on');zoneAnim=0;zoneAnimating=false;apply();mapFitAll();});
 function mapFlyToNum(num){const d=DATA.find(x=>x.num===num);if(d){mapFlyTo(d);document.querySelector('.mapstage').scrollIntoView({behavior:'smooth',block:'center'});}}
 window.mapFlyToNum=mapFlyToNum;
 
@@ -268,9 +313,9 @@ function lon2x(lon,z){return (lon+180)/360*Math.pow(2,z);}
 function lat2y(lat,z){const r=lat*Math.PI/180;return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z);}
 function resizeMap(){const r=mc.getBoundingClientRect();MW=r.width;MH=r.height;mc.width=MW*DPR;mc.height=MH*DPR;mx.setTransform(DPR,0,0,DPR,0,0);drawMap();}
 function loadTile(z,x,y){const key=`${z}/${x}/${y}`;if(tileCache.has(key))return tileCache.get(key);
-  const img=new Image();img.crossOrigin="anonymous";const s="abc"[(x+y)%3];
+  const img=new Image();img.crossOrigin="anonymous";
   img.onload=()=>drawMap();img.onerror=()=>{};
-  img.src=`https://${s}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`;
+  img.src=`https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
   tileCache.set(key,img);return img;}
 function drawMap(){
   if(!MW)return;
@@ -279,18 +324,84 @@ function drawMap(){
   const cx=lon2x(view.lng,z),cy=lat2y(view.lat,z),nT=Math.pow(2,z);
   const cols=Math.ceil(MW/(TILE*scale))+2,rows=Math.ceil(MH/(TILE*scale))+2;
   const sX=Math.floor(cx-cols/2),sY=Math.floor(cy-rows/2);
+  // tiles con filtro oscuro (OSM es claro -> lo invertimos/atenuamos para tema navy)
+  mx.save();
+  mx.filter='invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)';
   for(let ix=sX;ix<sX+cols;ix++)for(let iy=sY;iy<sY+rows;iy++){
     const tx=((ix%nT)+nT)%nT;if(iy<0||iy>=nT)continue;
     const img=loadTile(z,tx,iy);
     const px=(ix-cx)*TILE*scale+MW/2,py=(iy-cy)*TILE*scale+MH/2;
     if(img&&img.complete&&img.naturalWidth)mx.drawImage(img,px,py,TILE*scale+1,TILE*scale+1);}
+  mx.restore();
+  // tinte navy encima para integrar con la marca
+  mx.fillStyle="rgba(7,26,43,.45)";mx.fillRect(0,0,MW,MH);
+  drawZones(z,scale,cx,cy);
   drawPoints(z,scale,cx,cy);
 }
 function project(lat,lng,z,scale,cx,cy){return [(lon2x(lng,z)-cx)*TILE*scale+MW/2,(lat2y(lat,z)-cy)*TILE*scale+MH/2];}
+
+/* convex hull (Andrew monotone chain) */
+function hull(pts){
+  if(pts.length<3)return pts;
+  const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[];for(const pt of p){while(lo.length>=2&&cross(lo[lo.length-2],lo[lo.length-1],pt)<=0)lo.pop();lo.push(pt);}
+  const up=[];for(let i=p.length-1;i>=0;i--){const pt=p[i];while(up.length>=2&&cross(up[up.length-2],up[up.length-1],pt)<=0)up.pop();up.push(pt);}
+  lo.pop();up.pop();return lo.concat(up);
+}
+/* expandir el polígono desde su centroide */
+function expandHull(h,f){
+  const cx=h.reduce((s,p)=>s+p[0],0)/h.length, cy=h.reduce((s,p)=>s+p[1],0)/h.length;
+  return h.map(([x,y])=>[cx+(x-cx)*f, cy+(y-cy)*f]);
+}
+/* curva suave cerrada (Catmull-Rom) para que el perímetro no tenga esquinas duras */
+function smoothClosedPath(ctx,pts){
+  if(pts.length<3)return;
+  ctx.beginPath();
+  const n=pts.length;
+  ctx.moveTo((pts[0][0]+pts[n-1][0])/2,(pts[0][1]+pts[n-1][1])/2);
+  for(let i=0;i<n;i++){
+    const p1=pts[i], p2=pts[(i+1)%n];
+    const mx2=(p1[0]+p2[0])/2, my2=(p1[1]+p2[1])/2;
+    ctx.quadraticCurveTo(p1[0],p1[1],mx2,my2);
+  }
+  ctx.closePath();
+}
+let zoneAnim=0; // 0..1 crecimiento de la zona
+function drawZones(z,scale,cx,cy){
+  if(activeRoute==="ALL")return;
+  const list=DATA.filter(d=>d.ruta===activeRoute);
+  if(list.length<3)return;
+  const scr=list.map(d=>project(d.lat,d.lng,z,scale,cx,cy));
+  let h=hull(scr);
+  if(h.length<3)return;
+  const grow=1.06+0.10*zoneAnim;
+  h=expandHull(h,grow);
+  const col=routeHex(activeRoute);
+  const cxp=h.reduce((s,p)=>s+p[0],0)/h.length, cyp=h.reduce((s,p)=>s+p[1],0)/h.length;
+  let maxR=0;for(const p of h){const d=Math.hypot(p[0]-cxp,p[1]-cyp);if(d>maxR)maxR=d;}
+
+  mx.save();
+  smoothClosedPath(mx,h);
+  // relleno gradiente radial suave
+  const g=mx.createRadialGradient(cxp,cyp,maxR*0.1,cxp,cyp,maxR);
+  const rgb=hexToRgb(col);
+  g.addColorStop(0,`rgba(${rgb},${0.30*zoneAnim})`);
+  g.addColorStop(0.6,`rgba(${rgb},${0.16*zoneAnim})`);
+  g.addColorStop(1,`rgba(${rgb},0)`);
+  mx.fillStyle=g;mx.fill();
+  // halo/borde difuminado (sin línea dura)
+  mx.shadowColor=col;mx.shadowBlur=28*zoneAnim;
+  mx.strokeStyle=`rgba(${rgb},${0.42*zoneAnim})`;mx.lineWidth=2.5;
+  mx.stroke();
+  mx.restore();
+}
+function hexToRgb(h){const n=parseInt(h.slice(1),16);return `${(n>>16)&255},${(n>>8)&255},${n&255}`;}
+
 let pulse=0;
 function drawPoints(z,scale,cx,cy){
   const list=activeRoute==="ALL"?DATA:DATA.filter(d=>d.ruta===activeRoute);
-  const hi=(query&&filtered.length&&filtered.length<=3)?filtered[0]:null;
+  const hi=(searchMode&&filtered.length&&filtered.length<=3)?filtered[0]:null;
   for(const d of list){
     const [px,py]=project(d.lat,d.lng,z,scale,cx,cy);
     if(px<-20||px>MW+20||py<-20||py>MH+20)continue;
@@ -329,13 +440,21 @@ let pd=0;
 mc.addEventListener('touchstart',e=>{if(e.touches.length===2)pd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});
 mc.addEventListener('touchmove',e=>{if(e.touches.length===2){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);view.zoom=Math.max(9,Math.min(18,view.zoom+(d-pd)*0.01));pd=d;target=null;drawMap();}},{passive:true});
 
+let zoneAnimating=false;
 function mapLoop(){
   pulse+=0.12;
+  let needsDraw=false;
+  if(zoneAnimating){
+    zoneAnim+=(1-zoneAnim)*0.12;
+    if(zoneAnim>0.99){zoneAnim=1;zoneAnimating=false;}
+    needsDraw=true;
+  }
   if(target){
     view.lat+=(target.lat-view.lat)*0.12;view.lng+=(target.lng-view.lng)*0.12;view.zoom+=(target.zoom-view.zoom)*0.12;
     if(Math.abs(target.lat-view.lat)<1e-5&&Math.abs(target.zoom-view.zoom)<0.01){view.lat=target.lat;view.lng=target.lng;view.zoom=target.zoom;target=null;}
-    drawMap();
-  }else if(query&&filtered.length&&filtered.length<=3){drawMap();}
+    needsDraw=true;
+  }else if(searchMode&&filtered.length&&filtered.length<=3){needsDraw=true;}
+  if(needsDraw)drawMap();
   requestAnimationFrame(mapLoop);
 }
 new ResizeObserver(resizeMap).observe(mc);
@@ -476,8 +595,25 @@ function animate(){
 function resize3d(){renderer.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();}
 addEventListener('resize',resize3d);resize3d();animate();
 
+/* ===== reveal suave del mapa al entrar/salir con scroll ===== */
+const stageEl=document.querySelector('.mapstage');
+function mapReveal(){
+  const r=stageEl.getBoundingClientRect();
+  const vh=innerHeight;
+  // centro del stage respecto al centro del viewport
+  const center=r.top+r.height/2;
+  const dist=Math.abs(center-vh/2)/(vh/2+r.height/2); // 0 centrado, 1 fuera
+  const t=Math.max(0,Math.min(1,1-dist));             // 1 centrado
+  const eased=t*t*(3-2*t);
+  stageEl.style.opacity=(0.35+0.65*eased).toFixed(3);
+  stageEl.style.transform=`scale(${(0.97+0.03*eased).toFixed(3)})`;
+}
+addEventListener('scroll',mapReveal,{passive:true});
+addEventListener('resize',mapReveal);
+mapReveal();
+
 load();setInterval(load,180000);
+
 </script>
 </body>
 </html>
-
