@@ -106,6 +106,21 @@ a{color:inherit}
 .sec-head{text-align:center;padding:0 6vw;margin-bottom:24px}
 .sec-head h2{font-family:'Bebas Neue',sans-serif;font-weight:400;font-size:clamp(36px,5.4vw,72px);line-height:1;text-transform:uppercase}
 .sec-head p{color:var(--muted);font-weight:300;margin-top:8px}
+/* selector de ciudad */
+.cityseg{display:inline-flex;gap:6px;margin-top:18px;padding:5px;border-radius:16px;background:var(--surface);border:1px solid var(--line);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);max-width:100%;overflow-x:auto;scrollbar-width:none}
+.cityseg::-webkit-scrollbar{display:none}
+.cityseg button{display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:12px;font-size:14px;font-weight:600;color:var(--muted);white-space:nowrap;transition:background .25s,color .25s}
+.cityseg button small{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;opacity:.75}
+.cityseg button:hover{color:var(--ink)}
+.cityseg button.on{color:#fff;background:var(--grad);background-size:200% 100%;animation:gradMove 8s linear infinite;box-shadow:0 10px 24px -12px rgba(55,138,221,.8)}
+.citycards{position:absolute;left:0;right:0;bottom:22px;z-index:5;display:flex;justify-content:center;gap:12px;padding:0 70px 0 16px;pointer-events:none;transition:opacity .4s,transform .45s cubic-bezier(.2,.8,.2,1)}
+.citycards.hide{opacity:0;transform:translateY(16px)}
+.citycard{pointer-events:auto;min-width:150px;text-align:left;padding:14px 18px;border-radius:18px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:transform .2s,border-color .2s}
+.citycard:hover{transform:translateY(-3px);border-color:var(--_c)}
+.citycard b{display:block;font-family:'Bebas Neue',sans-serif;font-weight:400;font-size:30px;line-height:1;color:var(--ink)}
+.citycard span{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+.citycard i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--_c);margin-right:7px;box-shadow:0 0 12px var(--_c)}
+.card .cty{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--muted)}
 .mapstage{position:relative;overflow:hidden;width:100%;height:82vh;min-height:460px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--map-bg-1);will-change:opacity,transform}
 #map2d{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:pan-y}
 #map2d.grabbing{cursor:grabbing}
@@ -227,6 +242,7 @@ footer{position:relative;z-index:3;border-top:1px solid var(--line);padding:30px
   .count{text-align:left}
   .f-meta{text-align:left}
 }
+@media(max-width:560px){.citycards{bottom:14px;gap:8px;padding:0 62px 0 12px}.citycard{min-width:0;flex:1;padding:12px 14px}.citycard b{font-size:24px}}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}}
 </style>
 </head>
@@ -244,7 +260,7 @@ footer{position:relative;z-index:3;border-top:1px solid var(--line);padding:30px
 </div>
 
 <section class="hero">
-  <div class="kicker">GEO Track · Contenedores metálicos de Ambato</div>
+  <div class="kicker">GEO Track · Contenedores metálicos · Ecuador</div>
   <h1><span class="l">Cada contenedor,</span><span class="l grad-text">en su punto.</span></h1>
   <p class="sub">Encuentra cualquier contenedor por número o por ruta y llega a su ubicación exacta en un toque.</p>
   <div class="scroll-cue"><span class="bar"></span> Desliza para ver el mapa</div>
@@ -252,8 +268,9 @@ footer{position:relative;z-index:3;border-top:1px solid var(--line);padding:30px
 
 <section class="mapsec" id="mapa">
   <div class="sec-head">
-    <h2>La red sobre <span class="grad-text">Ambato</span></h2>
-    <p>Cada punto es un contenedor. El color indica su ruta.</p>
+    <h2>La red sobre <span class="grad-text" id="h2city">Ecuador</span></h2>
+    <p id="secsub">Cada punto es un contenedor. Elige una ciudad para ver sus rutas.</p>
+    <div class="cityseg" id="cityseg" role="tablist" aria-label="Ciudad"></div>
   </div>
   <div class="mapstage" id="stage">
     <canvas id="map2d"></canvas>
@@ -263,6 +280,7 @@ footer{position:relative;z-index:3;border-top:1px solid var(--line);padding:30px
       <button id="zout" aria-label="Alejar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
       <button id="zfit" aria-label="Centrar la red"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
     </div>
+    <div class="citycards" id="citycards"></div>
     <div class="maphint" id="maphint"></div>
     <div class="ghint" id="ghint"></div>
     <div class="attrib">Esri, HERE, Garmin · © OpenStreetMap</div>
@@ -305,12 +323,21 @@ const GID="237265956";
 const CSV_URL=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}`;
 const REFRESH_MS=180000;
 /* Mapa base sin API key: calles (base) + nombres (capa aparte, solo al acercar) */
+/* El mapa gris oscuro de Esri solo llega al nivel 16: al acercar más se
+   estiraba la imagen y se veía borroso. Ahora, del 17 al 19 se usa el plano
+   de calles de Esri (mucho más detallado) y se le extrae solo la forma de
+   las calles, así el estilo es el mismo y las calles quedan nítidas. En
+   pantallas de alta densidad se pide además un nivel más de detalle. */
 const TILES={
   base:"https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+  calles:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
   labelsDark:"https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
   labelsLight:"https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
-  maxZ:16
+  maxBase:16, maxZ:19
 };
+/* Ciudades. Una fila sin ciudad se asigna a la más cercana. */
+const CIUDADES={AMBATO:{t:'Ambato',c:[-1.2491,-78.6168],col:'#34C38F'},QUITO:{t:'Quito',c:[-0.2010,-78.4985],col:'#7CC0FF'}};
+const titulo=c=>(CIUDADES[c]&&CIUDADES[c].t)||(c.charAt(0)+c.slice(1).toLowerCase());
 /* Columnas: A Número | B lat | C lng | D Link | E Ruta | F GIDSA | G UTM1 | H UTM2 | I QR | J WA */
 
 const $=s=>document.querySelector(s);
@@ -366,6 +393,15 @@ const idSort=(a,b)=>a.num.localeCompare(b.num,undefined,{numeric:true,sensitivit
 function hsl2rgb(h,s,l){s/=100;l/=100;const k=n=>(n+h/30)%12,a=s*Math.min(l,1-l),f=n=>l-a*Math.max(-1,Math.min(k(n)-3,Math.min(9-k(n),1)));return [f(0),f(8),f(4)].map(v=>Math.round(v*255));}
 
 let DATA=[],ROUTES=[],routeColor={},filtered=[],exactList=[],relatedList=[];
+/* DATA_ALL: todo GEO TRACK. DATA: lo de la ciudad elegida (o todo, en la vista Ecuador) */
+let DATA_ALL=[],CITY=null,CITY_LIST=[];
+try{CITY=localStorage.getItem('gt-ciudad')||null;}catch(e){}
+function ciudadDe(raw,lat,lng){
+  const c=String(raw||'').trim().toUpperCase();if(c)return c;
+  let best='AMBATO',bd=1e9;
+  for(const k in CIUDADES){const [a,b]=CIUDADES[k].c,d=(a-lat)*(a-lat)+(b-lng)*(b-lng);if(d<bd){bd=d;best=k;}}
+  return best;
+}
 let activeRoute='ALL',query='',lastRaw='',firstLoad=true,searchHi=null;
 function assignColors(){routeColor={};ROUTES.forEach((r,i)=>{const [R,G,B]=hsl2rgb((205+i*137.508)%360,62,55);routeColor[r]={hex:'#'+[R,G,B].map(v=>v.toString(16).padStart(2,'0')).join(''),rgb:`${R},${G},${B}`};});}
 const rc=r=>routeColor[r]||{hex:'#8FA6B8',rgb:'143,166,184'};
@@ -386,20 +422,18 @@ async function load(){
       const lat=parseFloat((r[1]||'').replace(',','.')),lng=parseFloat((r[2]||'').replace(',','.'));
       if(!num||!isFinite(lat)||!isFinite(lng)||lat<-6||lat>2||lng<-82||lng>-74)continue;
       const [nx,ny]=toNorm(lat,lng);
-      next.push({num,numL:num.toLowerCase(),lat,lng,nx,ny,link:(r[3]||'').trim(),ruta:(r[4]||'').trim().toUpperCase()||'SIN RUTA',gidsa:(r[5]||'').trim(),qr:/^s[íi]/i.test((r[8]||'').trim()),wa:(r[9]||'').trim()});
+      const ciudad=ciudadDe(r[11],lat,lng);
+      next.push({num,numL:num.toLowerCase(),key:ciudad+'|'+num,ciudad,lat,lng,nx,ny,link:(r[3]||'').trim(),ruta:(r[4]||'').trim().toUpperCase()||'SIN RUTA',gidsa:(r[5]||'').trim(),qr:/^s[íi]/i.test((r[8]||'').trim()),wa:(r[9]||'').trim()});
     }
     next.sort(idSort);
-    DATA=next;
-    const routes=[...new Set(DATA.map(d=>d.ruta))].sort((a,b)=>a.localeCompare(b,'es',{numeric:true}));
-    if(routes.join('|')!==ROUTES.join('|')){
-      ROUTES=routes;assignColors();
-      if(activeRoute!=='ALL'&&!ROUTES.includes(activeRoute))activeRoute='ALL';
-      buildRoutesUI();
-    }
-    hullCache.clear();
+    DATA_ALL=next;
+    const cuenta={};next.forEach(d=>cuenta[d.ciudad]=(cuenta[d.ciudad]||0)+1);
+    CITY_LIST=Object.keys(cuenta).sort((a,b)=>cuenta[b]-cuenta[a]);
+    if(CITY&&!CITY_LIST.includes(CITY))CITY=null;
+    prepararCiudad();
     buildStats(firstLoad);
     apply({fly:false,animate:firstLoad});
-    if(selected){const d=DATA.find(x=>x.num===selected.num);if(d){selected=d;fillPopup(d);}else closePopup();}
+    if(selected){const d=DATA.find(x=>x.key===selected.key);if(d){selected=d;fillPopup(d);}else closePopup();}
     if(firstLoad){$('#loader').style.display='none';setInitialView();firstLoad=false;}
     dirty=true;stampSync();
   }catch(e){
@@ -407,6 +441,46 @@ async function load(){
     console.error(e);
   }
 }
+/* ---------- ciudad ---------- */
+function prepararCiudad(){
+  DATA=CITY?DATA_ALL.filter(d=>d.ciudad===CITY):DATA_ALL.slice();
+  const routes=[...new Set(DATA.map(d=>d.ruta))].sort((a,b)=>a.localeCompare(b,'es',{numeric:true}));
+  if(routes.join('|')!==ROUTES.join('|')){ROUTES=routes;assignColors();}
+  if(activeRoute!=='ALL'&&!ROUTES.includes(activeRoute))activeRoute='ALL';
+  buildRoutesUI();hullCache.clear();cityCenters=null;pintarCiudades();
+}
+let cityCenters=null;
+function centros(){
+  if(cityCenters)return cityCenters;
+  cityCenters={};
+  CITY_LIST.forEach(c=>{const ds=DATA_ALL.filter(d=>d.ciudad===c);let x=0,y=0;ds.forEach(d=>{x+=d.nx;y+=d.ny;});
+    cityCenters[c]={x:x/ds.length,y:y/ds.length,n:ds.length,rutas:new Set(ds.map(d=>d.ruta)).size};});
+  return cityCenters;
+}
+const colCiudad=c=>(CIUDADES[c]&&CIUDADES[c].col)||'#E0A83D';
+function pintarCiudades(){
+  const C=centros();
+  $('#cityseg').innerHTML=`<button data-city="" class="${CITY?'':'on'}" role="tab">Ecuador <small>${DATA_ALL.length}</small></button>`+
+    CITY_LIST.map(c=>`<button data-city="${esc(c)}" class="${CITY===c?'on':''}" role="tab">${esc(titulo(c))} <small>${C[c].n}</small></button>`).join('');
+  $('#h2city').textContent=CITY?titulo(CITY):'Ecuador';
+  $('#secsub').textContent=CITY?`Cada punto es un contenedor de ${titulo(CITY)}. El color indica su ruta.`:'Cada punto es un contenedor. Elige una ciudad para ver sus rutas.';
+  const cc=$('#citycards');
+  cc.innerHTML=CITY_LIST.map(c=>`<button class="citycard" data-city="${esc(c)}" style="--_c:${colCiudad(c)}"><b><i></i>${esc(titulo(c))}</b><span>${C[c].n} contenedores · ${C[c].rutas} rutas</span></button>`).join('');
+  cc.classList.toggle('hide',!!CITY);
+  $('#routes').style.display=CITY?'':'none';
+  $('#q').placeholder=CITY?`Buscar contenedor de ${titulo(CITY)} por número`:'Buscar contenedor por número (ej. 1302 o G1)';
+}
+function elegirCiudad(c){
+  c=c||null;
+  if(c===CITY&&DATA.length){const go=()=>flyTo(coreView());bringMapIntoView()?setTimeout(go,450):go();return;}
+  CITY=c;try{c?localStorage.setItem('gt-ciudad',c):localStorage.removeItem('gt-ciudad');}catch(e){}
+  closePopup();activeRoute='ALL';zoneAnim=1;
+  prepararCiudad();buildStats(true);apply({fly:false,animate:true});
+  const go=()=>flyTo(coreView());
+  bringMapIntoView()?setTimeout(go,450):go();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-city]');if(b)elegirCiudad(b.dataset.city);});
+
 function stampSync(){$('#sync').textContent='Actualizado a las '+new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});}
 
 function buildRoutesUI(){
@@ -414,10 +488,17 @@ function buildRoutesUI(){
     ROUTES.map(r=>`<button class="chip${activeRoute===r?' on':''}" data-r="${esc(r)}" style="--_c:${rc(r).hex}"><span class="dot"></span>${esc(r)}</button>`).join('');
 }
 function buildStats(anim){
+  const el=$('#stats');
+  if(!CITY){
+    const C=centros();
+    el.innerHTML=`<div class="stat total on"><div class="n" data-v="${DATA_ALL.length}">${anim?0:DATA_ALL.length}</div><div class="k">Contenedores en Ecuador</div></div>`+
+      CITY_LIST.map(c=>`<button class="stat" data-city="${esc(c)}" style="--_c:${colCiudad(c)}"><div class="n" data-v="${C[c].n}">${anim?0:C[c].n}</div><div class="k">${esc(titulo(c))} · ${C[c].rutas} rutas</div></button>`).join('');
+    if(anim)el.querySelectorAll('.n').forEach(n=>{const to=+n.dataset.v;let v=0;const st=Math.max(1,Math.ceil(to/30));const t=setInterval(()=>{v+=st;if(v>=to){v=to;clearInterval(t);}n.textContent=v;},24);});
+    return;
+  }
   const cnt={};DATA.forEach(d=>cnt[d.ruta]=(cnt[d.ruta]||0)+1);
   const order=ROUTES.slice().sort((a,b)=>cnt[b]-cnt[a]);
-  const el=$('#stats');
-  el.innerHTML=`<button class="stat total${activeRoute==='ALL'?' on':''}" data-r="ALL"><div class="n" data-v="${DATA.length}">${anim?0:DATA.length}</div><div class="k">Contenedores</div></button>`+
+  el.innerHTML=`<button class="stat total${activeRoute==='ALL'?' on':''}" data-r="ALL"><div class="n" data-v="${DATA.length}">${anim?0:DATA.length}</div><div class="k">Contenedores de ${esc(titulo(CITY))}</div></button>`+
     order.map(r=>`<button class="stat${activeRoute===r?' on':''}" data-r="${esc(r)}" style="--_c:${rc(r).hex}"><div class="n" data-v="${cnt[r]}">${anim?0:cnt[r]}</div><div class="k">${esc(r)}</div></button>`).join('');
   if(anim)el.querySelectorAll('.n').forEach(n=>{const to=+n.dataset.v;let v=0;const st=Math.max(1,Math.ceil(to/30));const t=setInterval(()=>{v+=st;if(v>=to){v=to;clearInterval(t);}n.textContent=v;},24);});
 }
@@ -446,11 +527,11 @@ const ICON_WA='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColo
 function cardHTML(d,i,anim,exact){
   const c=rc(d.ruta);
   return `<div class="card${anim?' anim':''}${exact?' exact':''}" style="--_c:${c.hex};--_rgb:${c.rgb};${anim?`animation-delay:${Math.min(i*18,360)}ms`:''}">
-    <div class="top"><div class="id">${esc(d.num)}</div><div class="rt">${esc(d.ruta)}</div></div>
+    <div class="top"><div class="id">${esc(d.num)}</div><div class="rt">${esc(d.ruta)}</div></div>${CITY?'':`<div class="cty">${esc(titulo(d.ciudad).toUpperCase())}</div>`}
     <div class="meta"><div><span>Latitud</span><b>${d.lat.toFixed(6)}</b></div><div><span>Longitud</span><b>${d.lng.toFixed(6)}</b></div>
     ${d.gidsa&&d.gidsa!=='N/A'?`<div><span>GIDSA</span><b>${esc(d.gidsa)}</b></div>`:''}<div><span>Código QR</span><span class="qr ${d.qr?'yes':'no'}">${d.qr?'Requiere':'No requiere'}</span></div></div>
     <div class="acts">
-      <button class="btn loc" data-act="map" data-num="${esc(d.num)}">${ICON_TARGET}Ver en mapa</button>
+      <button class="btn loc" data-act="map" data-key="${esc(d.key)}">${ICON_TARGET}Ver en mapa</button>
       <a class="btn go" href="${esc(gmaps(d))}" target="_blank" rel="noopener">${ICON_PIN}Ir</a>
       ${d.wa?`<a class="btn wa" href="${esc(d.wa)}" target="_blank" rel="noopener" aria-label="WhatsApp">${ICON_WA}</a>`:''}
     </div></div>`;
@@ -477,7 +558,7 @@ function render(anim){
 const qIn=$('#q'),qClr=$('#qclr');
 qIn.addEventListener('input',()=>{query=qIn.value.trim().toLowerCase();qClr.classList.toggle('show',!!query);apply();});
 qClr.addEventListener('click',()=>{qIn.value='';query='';qClr.classList.remove('show');apply();qIn.focus();});
-$('#grid').addEventListener('click',e=>{const b=e.target.closest('[data-act="map"]');if(b)focusContainer(b.dataset.num);});
+$('#grid').addEventListener('click',e=>{const b=e.target.closest('[data-act="map"]');if(b)focusContainer(b.dataset.key);});
 document.addEventListener('click',e=>{const b=e.target.closest('#routes [data-r], #stats [data-r]');if(b)setRoute(b.dataset.r);});
 
 function mapVisibleFraction(){const r=stage.getBoundingClientRect();return Math.max(0,Math.min(r.bottom,innerHeight)-Math.max(r.top,0))/r.height;}
@@ -490,8 +571,8 @@ function setRoute(r){
   const go=()=>{zoneAnim=0;if(r==='ALL')flyTo(coreView());else{const v=boundsView(DATA.filter(d=>d.ruta===r),.02,.98,16);if(v)flyTo(v);}};
   bringMapIntoView()?setTimeout(go,450):go();
 }
-function focusContainer(num){
-  const d=DATA.find(x=>x.num===num);if(!d)return;
+function focusContainer(key){
+  const d=DATA.find(x=>x.key===key);if(!d)return;
   closePopup();
   const go=()=>flyTo({x:d.nx,y:d.ny,z:17},()=>selectPoint(d));
   bringMapIntoView()?setTimeout(go,480):go();
@@ -501,7 +582,7 @@ function focusContainer(num){
    MAPA 2D (canvas propio, ligero)
    ===================================================================== */
 const stage=$('#stage'),mc=$('#map2d'),mx=mc.getContext('2d');
-const ZMIN=10,ZMAX=18.5;
+const ZMIN=6.5,ZMAX=19.5;
 let MW=0,MH=0,dirty=true,mapVisible=true;
 const _amb=toNorm(-1.2491,-78.6168);
 let view={x:_amb[0],y:_amb[1],z:13.6};
@@ -523,6 +604,8 @@ new ResizeObserver(resizeMap).observe(mc);
 const baseCache=new Map(),labelCache=new Map();
 const BASE_CAP=LOW?140:280,LABEL_CAP=LOW?90:180;
 const tileURL=(tpl,z,x,y)=>tpl.replace('{z}',z).replace('{x}',x).replace('{y}',y);
+/* un nivel más de detalle en pantallas densas (casi todos los celulares) */
+const EXTRA=DPR>=1.4?1:0;
 function trim(m,keep){let n=m.size-keep;for(const k of m.keys()){if(n--<=0)break;m.delete(k);}}
 function makeMask(img){
   const c=document.createElement('canvas');c.width=c.height=256;
@@ -537,13 +620,31 @@ function makeMask(img){
   }
   g.putImageData(id,0,0);return c;
 }
+/* plano de calles (niveles 17–19): calles blancas y avenidas amarillas sobre
+   fondo crema. Se queda solo con las calles; los nombres quedan recortados. */
+function makeMaskCalles(img){
+  const c=document.createElement('canvas');c.width=c.height=256;
+  const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(img,0,0);
+  const id=g.getImageData(0,0,256,256),p=id.data,hist=new Uint32Array(256);
+  for(let i=0;i<p.length;i+=4)hist[(p[i]*.3+p[i+1]*.59+p[i+2]*.11)|0]++;
+  let bg=0,bm=0;for(let i=0;i<256;i++)if(hist[i]>bm){bm=hist[i];bg=i;}
+  for(let i=0;i<p.length;i+=4){
+    const r=p[i],gg=p[i+1],b=p[i+2],l=r*.3+gg*.59+b*.11,mxc=Math.max(r,gg,b),mnc=Math.min(r,gg,b);
+    let a=0;
+    if(l>bg+3&&mxc-mnc<30)a=Math.min(1,(l-bg-3)/10);
+    else if(r>200&&gg>140&&r-b>40)a=1;
+    p[i]=p[i+1]=p[i+2]=255;p[i+3]=a*255;
+  }
+  g.putImageData(id,0,0);return c;
+}
 function getBase(z,x,y){
   const k=z+'/'+x+'/'+y;let t=baseCache.get(k);
   if(t){baseCache.delete(k);baseCache.set(k,t);return t;}
   t={mask:null,img:null};baseCache.set(k,t);if(baseCache.size>BASE_CAP)trim(baseCache,BASE_CAP-40);
   const img=new Image();img.crossOrigin='anonymous';img.decoding='async';
-  img.onload=()=>{try{t.mask=makeMask(img);}catch(e){t.img=img;}dirty=true;};
-  img.src=tileURL(TILES.base,z,x,y);
+  const calles=z>TILES.maxBase;
+  img.onload=()=>{try{t.mask=calles?makeMaskCalles(img):makeMask(img);}catch(e){t.img=img;}dirty=true;};
+  img.src=tileURL(calles?TILES.calles:TILES.base,z,x,y);
   return t;
 }
 function getLabel(z,x,y){
@@ -574,7 +675,7 @@ function drawMap(){
   const bgG=mx.createLinearGradient(0,0,MW,MH);bgG.addColorStop(0,TV.bg1);bgG.addColorStop(1,TV.bg2);
   mx.fillStyle=bgG;mx.fillRect(0,0,MW,MH);
 
-  const tz=Math.max(0,Math.min(TILES.maxZ,Math.floor(view.z))),n=1<<tz,ts=256*Math.pow(2,view.z-tz);
+  const tz=Math.max(0,Math.min(TILES.maxZ,Math.floor(view.z+EXTRA))),n=1<<tz,ts=256*Math.pow(2,view.z-tz);
   const cx=view.x*n,cy=view.y*n;
   const x0=Math.floor(cx-MW/2/ts),x1=Math.floor(cx+MW/2/ts),y0=Math.max(0,Math.floor(cy-MH/2/ts)),y1=Math.min(n-1,Math.floor(cy+MH/2/ts));
 
@@ -595,12 +696,16 @@ function drawMap(){
   drawZone();
 
   /* 3) nombres de calles/sectores: aparecen al acercar */
-  const la=Math.max(0,Math.min(1,(view.z-12.8)/1.3));
+  // de cerca los nombres ya vienen recortados en el plano de calles
+  const la=Math.max(0,Math.min(1,(view.z-12.8)/1.3))*Math.max(0,Math.min(1,(17.3-view.z)/.7));
   if(la>0){
-    mx.save();mx.globalAlpha=la*(TV.dark?.85:.95);
-    for(let ix=x0;ix<=x1;ix++)for(let iy=y0;iy<=y1;iy++){
-      const tx=((ix%n)+n)%n,im=getLabel(tz,tx,iy);
-      if(im.complete&&im.naturalWidth)mx.drawImage(im,(ix-cx)*ts+MW/2,(iy-cy)*ts+MH/2,ts+.6,ts+.6);
+    const lz=Math.max(0,Math.min(TILES.maxBase,Math.floor(view.z))),ln=1<<lz,lts=256*Math.pow(2,view.z-lz);
+    const lcx=view.x*ln,lcy=view.y*ln;
+    const lx0=Math.floor(lcx-MW/2/lts),lx1=Math.floor(lcx+MW/2/lts),ly0=Math.max(0,Math.floor(lcy-MH/2/lts)),ly1=Math.min(ln-1,Math.floor(lcy+MH/2/lts));
+    mx.save();mx.globalAlpha=la*(TV.dark?.9:.95);mx.imageSmoothingQuality='high';
+    for(let ix=lx0;ix<=lx1;ix++)for(let iy=ly0;iy<=ly1;iy++){
+      const tx=((ix%ln)+ln)%ln,im=getLabel(lz,tx,iy);
+      if(im.complete&&im.naturalWidth)mx.drawImage(im,(ix-lcx)*lts+MW/2,(iy-lcy)*lts+MH/2,lts+.6,lts+.6);
     }
     mx.restore();
   }
@@ -610,8 +715,37 @@ function drawMap(){
   positionPopup();
 }
 
+/* De lejos (vista Ecuador) cada ciudad es una burbuja con su total; al
+   acercar se desvanece y aparecen los puntos. */
+const bubbleA=()=>Math.max(0,Math.min(1,(10.9-view.z)/1.1));
+function bubbleR(n){return 26+Math.sqrt(n)*1.15;}
+function drawBubbles(now){
+  const a=bubbleA();if(a<=0||!CITY_LIST.length)return;
+  const C=centros(),pulse=(now/2200)%1;
+  mx.save();
+  for(const c of CITY_LIST){
+    const k=C[c],[px,py]=w2s(k.x,k.y),R=bubbleR(k.n),col=colCiudad(c);
+    if(CITY&&c!==CITY)mx.globalAlpha=a*.45;else mx.globalAlpha=a;
+    const g=mx.createRadialGradient(px,py,0,px,py,R*1.9);g.addColorStop(0,col+'66');g.addColorStop(1,col+'00');
+    mx.fillStyle=g;mx.beginPath();mx.arc(px,py,R*1.9,0,6.2832);mx.fill();
+    mx.beginPath();mx.arc(px,py,R+pulse*R*.9,0,6.2832);mx.strokeStyle=col;mx.globalAlpha*=(1-pulse)*.8;mx.lineWidth=2;mx.stroke();
+    mx.globalAlpha=(CITY&&c!==CITY?.45:1)*a;
+    mx.beginPath();mx.arc(px,py,R,0,6.2832);mx.fillStyle=TV.panel;mx.fill();mx.lineWidth=2.4;mx.strokeStyle=col;mx.stroke();
+    mx.fillStyle=TV.ink;mx.textAlign='center';
+    mx.font="400 "+Math.round(R*.62)+"px 'Bebas Neue',sans-serif";mx.fillText(String(k.n),px,py+R*.18);
+    mx.font="700 11px 'Inter',sans-serif";mx.fillStyle=col;mx.fillText(titulo(c).toUpperCase(),px,py+R+18);
+  }
+  mx.restore();mx.textAlign='start';
+}
+function bubbleHit(sx,sy){
+  if(bubbleA()<.5)return null;
+  const C=centros();
+  for(const c of CITY_LIST){const [px,py]=w2s(C[c].x,C[c].y);if(Math.hypot(px-sx,py-sy)<=bubbleR(C[c].n)+8)return c;}
+  return null;
+}
 function drawPoints(now){
   const r=dotR(),w=W0(),vx=view.x,vy=view.y,ox=MW/2,oy=MH/2;
+  mx.save();mx.globalAlpha=1-bubbleA()*.85;
   const groups=new Map();
   for(const d of DATA){
     if(activeRoute!=='ALL'&&d.ruta!==activeRoute)continue;
@@ -630,6 +764,8 @@ function drawPoints(now){
     mx.fill();
     if(r>3.4){mx.strokeStyle=ring;mx.lineWidth=1.1;mx.stroke();}
   }
+  mx.restore();
+  drawBubbles(now);
   if(searchHi&&searchHi!==selected){
     const [px,py]=w2s(searchHi.nx,searchHi.ny),c=rc(searchHi.ruta);
     const f=(now/1100)%1;
@@ -738,7 +874,7 @@ function fillPopup(d){
   pop.innerHTML=`<button class="pop-x" data-act="close" aria-label="Cerrar">×</button>
     <div class="pop-head"><div class="pop-id">${esc(d.num)}</div><span class="pop-rt">${esc(d.ruta)}</span></div>
     <div class="pop-meta"><div><span>Latitud</span><b>${d.lat.toFixed(6)}</b></div><div><span>Longitud</span><b>${d.lng.toFixed(6)}</b></div>
-    ${d.gidsa&&d.gidsa!=='N/A'?`<div><span>GIDSA</span><b>${esc(d.gidsa)}</b></div>`:''}<div><span>Código QR</span><b>${d.qr?'Requiere':'No'}</b></div></div>
+    ${d.gidsa&&d.gidsa!=='N/A'?`<div><span>GIDSA</span><b>${esc(d.gidsa)}</b></div>`:''}<div><span>Código QR</span><b>${d.qr?'Requiere':'No'}</b></div><div><span>Ciudad</span><b>${esc(titulo(d.ciudad))}</b></div></div>
     <div class="pop-acts"><a class="go" href="${esc(gmaps(d))}" target="_blank" rel="noopener">${ICON_PIN}Cómo llegar</a>${d.wa?`<a class="wa" href="${esc(d.wa)}" target="_blank" rel="noopener" aria-label="WhatsApp">${ICON_WA}</a>`:''}</div>`;
 }
 function selectPoint(d){
@@ -765,17 +901,23 @@ function positionPopup(){
 }
 
 /* ---------- vistas: inicial cercana, ruta, centrar ---------- */
-function boundsView(list,lo,hi,maxZ){
+function boundsView(list,lo,hi,maxZ,minZ){
   if(!list.length||!MW)return null;
   const xs=list.map(d=>d.nx).sort((a,b)=>a-b),ys=list.map(d=>d.ny).sort((a,b)=>a-b);
   const q=(a,p)=>a[Math.min(a.length-1,Math.max(0,Math.round(p*(a.length-1))))];
   const x0=q(xs,lo),x1=q(xs,hi),y0=q(ys,lo),y1=q(ys,hi);
   const bw=Math.max(x1-x0,1e-7),bh=Math.max(y1-y0,1e-7);
   const z=Math.log2(Math.min(MW*.8/(bw*256),MH*.76/(bh*256)));
-  return {x:(x0+x1)/2,y:(y0+y1)/2,z:Math.max(12,Math.min(maxZ,z))};
+  return {x:(x0+x1)/2,y:(y0+y1)/2,z:Math.max(minZ??12,Math.min(maxZ,z))};
 }
-/* núcleo urbano: descarta los puntos más alejados para no abrir tanto el mapa */
-const coreView=()=>boundsView(DATA,.12,.88,15)||{...view};
+/* núcleo urbano: descarta los puntos más alejados para no abrir tanto el mapa.
+   En la vista Ecuador se abre lo justo para ver todas las ciudades. */
+function vistaEcuador(){
+  const C=centros(),pts=CITY_LIST.map(c=>({nx:C[c].x,ny:C[c].y}));
+  if(pts.length===1)return {x:pts[0].nx,y:pts[0].ny,z:10.5};
+  const v=boundsView(pts,0,1,11,6.5);if(v)v.z-=.55;return v;
+}
+const coreView=()=>(CITY?boundsView(DATA,.12,.88,15):vistaEcuador())||{...view};
 let introPending=false;
 function setInitialView(){
   const v=coreView();
@@ -824,13 +966,13 @@ function hitTest(sx,sy,rad){
   for(const d of DATA){if(activeRoute!=='ALL'&&d.ruta!==activeRoute)continue;const px=(d.nx-view.x)*w+MW/2,py=(d.ny-view.y)*w+MH/2,dd=(px-sx)*(px-sx)+(py-sy)*(py-sy);if(dd<bd){bd=dd;best=d;}}
   return best;
 }
-function tapAt(sx,sy,rad){const d=hitTest(sx,sy,rad);if(d){if(d!==selected)selectPoint(d);}else if(selected)closePopup();}
+function tapAt(sx,sy,rad){const bc=bubbleHit(sx,sy);if(bc){elegirCiudad(bc);return;}const d=hitTest(sx,sy,rad);if(d){if(d!==selected)selectPoint(d);}else if(selected)closePopup();}
 
 let drag=null;
 mc.addEventListener('pointerdown',e=>{if(e.pointerType==='touch'||e.button!==0)return;cancelMotion();drag={x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY,moved:false};mc.setPointerCapture(e.pointerId);});
 mc.addEventListener('pointermove',e=>{
   if(e.pointerType==='touch')return;
-  if(!drag){const [sx,sy]=localXY(e.clientX,e.clientY);mc.classList.toggle('pointing',!!hitTest(sx,sy,10));return;}
+  if(!drag){const [sx,sy]=localXY(e.clientX,e.clientY);mc.classList.toggle('pointing',!!(bubbleHit(sx,sy)||hitTest(sx,sy,10)));return;}
   const k=MW/mc.getBoundingClientRect().width,dx=(e.clientX-drag.x)*k,dy=(e.clientY-drag.y)*k;
   drag.x=e.clientX;drag.y=e.clientY;
   if(!drag.moved&&Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>5){drag.moved=true;mc.classList.add('grabbing');}
@@ -915,7 +1057,7 @@ function frame(now){
     anim=true;
   }
   if(activeRoute!=='ALL'&&zoneAnim<1){zoneAnim=Math.min(1,zoneAnim+dt/950);anim=true;}
-  if(selected||searchHi)anim=true;
+  if(selected||searchHi||bubbleA()>0)anim=true;
   if(mapVisible&&(anim||dirty)){drawMap();dirty=false;}
   requestAnimationFrame(frame);
 }
